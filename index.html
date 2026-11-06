@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Wordly Dictionary</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <main>
+        <section class="container">
+            <header>
+                <h1>Wordly Dictionary</h1>
+                <h5>Welcome to the world of dictionaries.Here you can search for words and their definitions.</h5>
+                <button id="theme-toggle">Type Word</button>
+            </header>
+
+
+            <!--Search section-->
+            <main>
+                <form id="search-form">
+                    <input type="text" id="search-input" placeholder="Enter a word" required>
+                    <button type="submit">Search</button><br>
+                    <input type="text" id="search-input" placeholder="Definition" required><br>
+                </form>
+
+                <form id="Additional-search-form">
+                    <input type="text" id="search-input" placeholder="Synonyms" required>
+                    <input type="text" id="search-input" placeholder="Antonyms" required>
+                    <input type="text" id="search-input" placeholder="Audio playback" required>
+
+                    <!-error & response section-->
+                        <div id="error-message" class="hidden"></div>
+                        <div id="response-container" class="hidden">
+                            <h2 id="word-title"></h2>
+                            <p id="word-definition"></p>
+                            <button id="save-word-between">Save Word</button>
+                        </div>
+                        <div>
+                            <p id="word-audio"></p>
+                            <div id="audio-container">
+                                <audio id="definition-audio" controls></audio>
+                            </div>
+
+                            <!--Sidebar section-->
+                            <aside id="sidebar" class="sidebar">
+
+                                <script src="script.js"></script>
+            </main>
+
+    </main>
+    </section>
+    </main>
+
+</body>
+
+</html>
