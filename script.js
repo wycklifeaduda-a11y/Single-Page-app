@@ -1,219 +1,214 @@
 const API_BASE_URL = 'https://api.dictionaryapi.dev/api/v2/entries/en/';
+const SAVED_WORDS_KEY = 'savedWords';
+const THEME_KEY = 'wordlyTheme';
+
 document.addEventListener('DOMContentLoaded', initApp);
 
 function initApp() {
-    const searchForm = document.getElementById('search-form');
-    const themeToggleBtn = document.getElementById('theme-toggle-btn');
-    const saveWordBtn = document.getElementById('save-word-btn');
-    const clearSavedWordsBtn = document.getElementById('clear-saved-words-btn');
+    document.getElementById('search-form').addEventListener('submit', handleSearch);
+    document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+    document.getElementById('save-word-btn').addEventListener('click', saveWord);
+    document.getElementById('clear-saved-words-btn').addEventListener('click', clearSavedWords);
+    document.getElementById('sidebar-list').addEventListener('click', handleSavedWordClick);
 
-    if (clearSavedWordsBtn) {
-        clearSavedWordsBtn.addEventListener('click', clearSavedWords);
-    }
-
-    rendersidebarlist(); // Render the sidebar list on page load 
-}
-if (searchForm) {
-    searchForm.addEventListener('submit', handleSearch);
+    applyTheme(localStorage.getItem(THEME_KEY) === 'dark');
+    renderSavedWords();
 }
 
-if (themeToggleBtn) {
-    themeToggleBtn.addEventListener('click', toggleTheme);
-}
-
-if (saveWordBtn) {
-    saveWordBtn.addEventListener('click', saveWord);
-}
-
-function handleSearch(event) {
+async function handleSearch(event) {
     event.preventDefault();
-    const searchInput = document.getElementById('search-input');
-    const word = searchInput.value.trim();
-    if (word) {
-        fetchWordData(word);
+    const word = document.getElementById('search-input').value.trim();
+    if (!word) return;
+
+    setLoading(true);
+    hideError();
+    document.getElementById('response-container').classList.add('hidden');
+
+    try {
+        const response = await fetch(`${API_BASE_URL}${encodeURIComponent(word)}`);
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.message || `No definition found for "${word}".`);
+        }
+        displayWordData(data);
+    } catch (error) {
+        showError(error instanceof TypeError
+            ? 'Could not connect to the dictionary. Check your internet connection and try again.'
+            : error.message || 'Something went wrong. Please try again.');
+    } finally {
+        setLoading(false);
     }
 }
 
-function fetchWordData(word) {
-    const url = `${API_BASE_URL}/api/v2/entries/en/${word}`;
-    fetch(url)
-        .then(response => response.json())
-        .then(data => displayWordData(data))
-        .catch(error => console.error('Error fetching word data:', error));
-}
+function displayWordData(entries) {
+    const entry = entries[0];
+    const responseContainer = document.getElementById('response-container');
+    const title = document.getElementById('word-title');
+    const phonetic = document.getElementById('word-phonetic');
+    const meanings = document.getElementById('word-meanings');
+    const saveButton = document.getElementById('save-word-btn');
 
-function displayWordData(data) {
-    const resultContainer = document.getElementById('result-container');
-    resultContainer.innerHTML = ''; // Clear previous results
+    title.textContent = entry.word;
+    phonetic.textContent = entry.phonetic || entry.phonetics?.find(item => item.text)?.text || '';
+    meanings.replaceChildren();
 
-    if (data.title === "No Definitions Found") {
-        resultContainer.innerHTML = `<p>No definitions found for the searched word.</p>`;
-        return;
-    }
+    entry.meanings?.forEach(meaning => {
+        const section = document.createElement('section');
+        section.className = 'meaning';
 
-    data.forEach(entry => {
-        const wordElement = document.createElement('div');
-        wordElement.classList.add('word-entry');
-        wordElement.innerHTML = `
-            <h2>${entry.word}</h2>
-            <p><strong>Phonetic:</strong> ${entry.phonetic || 'N/A'}</p>
-            <p><strong>Meaning:</strong> ${entry.meanings.map(meaning => meaning.partOfSpeech + ': ' + meaning.definitions.map(def => def.definition).join('; ')).join('<br>')}</p>
-        `;
-        resultContainer.appendChild(wordElement);
+        const partOfSpeech = document.createElement('h3');
+        partOfSpeech.textContent = meaning.partOfSpeech;
+        section.appendChild(partOfSpeech);
+
+        const definitionList = document.createElement('ol');
+        meaning.definitions?.forEach(item => {
+            const definition = document.createElement('li');
+            definition.textContent = item.definition;
+            if (item.example) {
+                const example = document.createElement('p');
+                example.className = 'example';
+                example.textContent = `“${item.example}”`;
+                definition.appendChild(example);
+            }
+            definitionList.appendChild(definition);
+        });
+        section.appendChild(definitionList);
+
+        addWordGroup(section, 'Synonyms', uniqueWords([
+            ...(meaning.synonyms || []),
+            ...(meaning.definitions || []).flatMap(item => item.synonyms || [])
+        ]));
+        addWordGroup(section, 'Antonyms', uniqueWords([
+            ...(meaning.antonyms || []),
+            ...(meaning.definitions || []).flatMap(item => item.antonyms || [])
+        ]));
+        meanings.appendChild(section);
     });
+
+    const audio = document.getElementById('definition-audio');
+    const audioUrl = entry.phonetics?.find(item => item.audio)?.audio;
+    const audioContainer = document.getElementById('audio-container');
+    if (audioUrl) {
+        audio.src = audioUrl;
+        audioContainer.classList.remove('hidden');
+    } else {
+        audio.removeAttribute('src');
+        audio.load();
+        audioContainer.classList.add('hidden');
+    }
+
+    saveButton.dataset.word = entry.word;
+    updateSaveButton();
+    responseContainer.classList.remove('hidden');
 }
 
-function toggleTheme() {
-    document.body.classList.toggle('dark-theme');
+function addWordGroup(container, label, words) {
+    if (!words.length) return;
+    const paragraph = document.createElement('p');
+    paragraph.className = 'word-group';
+    const heading = document.createElement('strong');
+    heading.textContent = `${label}: `;
+    paragraph.append(heading, document.createTextNode(words.join(', ')));
+    container.appendChild(paragraph);
+}
+
+function uniqueWords(words) {
+    return [...new Set(words.filter(Boolean))];
+}
+
+function setLoading(isLoading) {
+    document.getElementById('loading-message').classList.toggle('hidden', !isLoading);
+    const searchButton = document.getElementById('search-button');
+    searchButton.disabled = isLoading;
+    searchButton.textContent = isLoading ? 'Searching…' : 'Search';
+}
+
+function showError(message) {
+    const errorMessage = document.getElementById('error-message');
+    errorMessage.textContent = message;
+    errorMessage.classList.remove('hidden');
+}
+
+function hideError() {
+    document.getElementById('error-message').classList.add('hidden');
+}
+
+function getSavedWords() {
+    try {
+        const words = JSON.parse(localStorage.getItem(SAVED_WORDS_KEY) || '[]');
+        return Array.isArray(words) ? words.filter(word => typeof word === 'string') : [];
+    } catch {
+        return [];
+    }
 }
 
 function saveWord() {
-    const searchInput = document.getElementById('search-input');
-    const word = searchInput.value.trim();
-    if (word) {
-        let savedWords = JSON.parse(localStorage.getItem('savedWords')) || [];
-        if (!savedWords.includes(word)) {
-            savedWords.push(word);
-            localStorage.setItem('savedWords', JSON.stringify(savedWords));
-            alert(`Word "${word}" saved successfully!`);
-        } else {
-            alert(`Word "${word}" is already saved.`);
-        }
-    }
-}
-async function fetchWordData(word) {
-    const url = `${API_BASE_URL}/api/v2/entries/en/${word}`;
-    try {
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
-        const data = await response.json();
-        displayWordData(data);
-    } catch (error) {
-        console.error('Error fetching word data:', error);
-        const resultContainer = document.getElementById('result-container');
-        resultContainer.innerHTML = `<p>Error fetching word data. Please try again later.</p>`;
-    }
-} 
+    const word = document.getElementById('save-word-btn').dataset.word;
+    if (!word) return;
 
-function handleFetchError(error) {
-    console.error('Error fetching word data:', error);
-    const resultContainer = document.getElementById('result-container');
-    resultContainer.innerHTML = `<p>Error fetching word data. Please try again later.</p>`;
+    const savedWords = getSavedWords();
+    if (!savedWords.some(saved => saved.toLowerCase() === word.toLowerCase())) {
+        savedWords.push(word);
+        localStorage.setItem(SAVED_WORDS_KEY, JSON.stringify(savedWords));
+    }
+    renderSavedWords();
+    updateSaveButton();
 }
 
-function renderDictionary() {
-    const resultContainer = document.getElementById('result-container');
-    const savedWords = JSON.parse(localStorage.getItem('savedWords')) || [];
-    resultContainer.innerHTML = ''; // Clear previous results
+function updateSaveButton() {
+    const button = document.getElementById('save-word-btn');
+    const word = button.dataset.word;
+    const isSaved = word && getSavedWords().some(saved => saved.toLowerCase() === word.toLowerCase());
+    button.textContent = isSaved ? 'Saved' : 'Save word';
+    button.disabled = Boolean(isSaved);
+}
 
-    if (savedWords.length === 0) {
-        resultContainer.innerHTML = `<p>No saved words found.</p>`;
+function renderSavedWords() {
+    const list = document.getElementById('sidebar-list');
+    const savedWords = getSavedWords();
+    list.replaceChildren();
+
+    if (!savedWords.length) {
+        const emptyItem = document.createElement('li');
+        emptyItem.className = 'empty-saved';
+        emptyItem.textContent = 'Your saved words will appear here.';
+        list.appendChild(emptyItem);
         return;
     }
 
     savedWords.forEach(word => {
-        const wordElement = document.createElement('div');
-        wordElement.classList.add('word-entry');
-        wordElement.innerHTML = `<h2>${word}</h2>`;
-        resultContainer.appendChild(wordElement);
+        const item = document.createElement('li');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'saved-word';
+        button.textContent = word;
+        button.dataset.word = word;
+        item.appendChild(button);
+        list.appendChild(item);
     });
-}   
-function defination(word) {
-    const url = `${API_BASE_URL}/api/v2/entries/en/${word}`;
-    fetch(url)
-        .then(response => response.json())
-        .then(data => {
-            if (data.title === "No Definitions Found") {
-                alert(`No definitions found for the word "${word}".`);
-                return;
-            }
-            const definition = data[0].meanings[0].definitions[0].definition;
-            alert(`Definition of "${word}": ${definition}`);
-        })
-        .catch(error => console.error('Error fetching definition:', error));
-}
-function extractsynonyms(word) {
-    const url = `${API_BASE_URL}/api/v2/entries/en/${word}`;
-    fetch(url)
-        .then(response => response.json())
-        .then(data => {
-            if (data.title === "No Definitions Found") {
-                alert(`No synonyms found for the word "${word}".`);
-                return;
-            }
-            const synonyms = data[0].meanings[0].definitions[0].synonyms;
-            if (synonyms && synonyms.length > 0) {
-                alert(`Synonyms of "${word}": ${synonyms.join(', ')}`);
-            } else {
-                alert(`No synonyms found for the word "${word}".`);
-            }
-        })
-        .catch(error => console.error('Error fetching synonyms:', error));
 }
 
-function extractantonyms(word) {
-    const url = `${API_BASE_URL}/api/v2/entries/en/${word}`;
-    fetch(url)
-        .then(response => response.json())
-        .then(data => {
-            if (data.title === "No Definitions Found") {
-                alert(`No antonyms found for the word "${word}".`);
-                return;
-            }
-            const antonyms = data[0].meanings[0].definitions[0].antonyms;
-            if (antonyms && antonyms.length > 0) {
-                alert(`Antonyms of "${word}": ${antonyms.join(', ')}`);
-            } else {
-                alert(`No antonyms found for the word "${word}".`);
-            }
-        })
-        .catch(error => console.error('Error fetching antonyms:', error));
+function handleSavedWordClick(event) {
+    const button = event.target.closest('.saved-word');
+    if (!button) return;
+    document.getElementById('search-input').value = button.dataset.word;
+    document.getElementById('search-form').requestSubmit();
 }
-
-function setupaudio(word) {
-    const url = `${API_BASE_URL}/api/v2/entries/en/${word}`;
-    fetch(url)
-        .then(response => response.json())
-        .then(data => {
-            if (data.title === "No Definitions Found") {
-                alert(`No audio found for the word "${word}".`);
-                return;
-            }
-            const audioUrl = data[0].phonetics[0].audio;
-            if (audioUrl) {
-                const audioElement = document.createElement('audio');
-                audioElement.src = audioUrl;
-                audioElement.controls = true;
-                document.body.appendChild(audioElement);
-            } else {
-                alert(`No audio found for the word "${word}".`);
-            }
-        })
-        .catch(error => console.error('Error fetching audio:', error));
-}
-
-function rendersidebarlist() {
-    const sidebarList = document.getElementById('sidebar-list');
-    const savedWords = JSON.parse(localStorage.getItem('savedWords')) || [];
-    sidebarList.innerHTML = ''; // Clear previous list
-    
-    if (savedWords.length === 0) {
-        sidebarList.innerHTML = `<li>No saved words found.</li>`;
-        return;
-    }
-
-    savedWords.forEach(word => {
-        const listItem = document.createElement('li');
-        listItem.textContent = word;
-        sidebarList.appendChild(listItem);
-    });
-}   
 
 function clearSavedWords() {
-    localStorage.removeItem('savedWords');
-    alert('All saved words have been cleared.');
-    rendersidebarlist(); // Update the sidebar list after clearing
-}   
+    localStorage.removeItem(SAVED_WORDS_KEY);
+    renderSavedWords();
+    updateSaveButton();
+}
 
+function toggleTheme() {
+    applyTheme(!document.body.classList.contains('dark-theme'));
+}
+
+function applyTheme(isDark) {
+    document.body.classList.toggle('dark-theme', isDark);
+    const button = document.getElementById('theme-toggle');
+    button.textContent = isDark ? 'Use light theme' : 'Use dark theme';
+    button.setAttribute('aria-pressed', String(isDark));
+    localStorage.setItem(THEME_KEY, isDark ? 'dark' : 'light');
+}
